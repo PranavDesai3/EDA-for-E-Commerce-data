@@ -1,0 +1,477 @@
+---
+title: "E-commerce Exploratory Analytics & Dashboard"
+author: "239267779"
+date: 28/11/2023
+output:
+  html_document:
+    theme: readable
+    toc: TRUE
+    number_sections: TRUE
+---
+
+# Assignment Overview
+
+## Background
+
+With the rise of e-commerce, understanding customer behavior and purchasing patterns is vital for online businesses. Utilizing transactional data can provide actionable insights, helping to optimize sales strategies, improve customer experiences, and maximize revenue. Your primary objective is to assist an online retailer by analyzing their transaction data to uncover sales trends, customer segmentation, and potential areas of improvement.
+
+## Data Insights
+
+The dataset captures transactions from December 2010 to December 2011 from a UK-based online retailer. Fields include:
+
+-   `InvoiceNo` - Invoice number - a 6-digit integral number uniquely assigned to each transaction. If this code starts with letter 'c', it indicates a cancellation.
+-   `StockCode` - a 5-digit integral number uniquely assigned to each distinct product
+-   `Description` - product name
+-   `Quantity` - the quantities of each product (item) per transaction
+-   `InvoiceDate` - the day and time when each transaction was generated
+-   `UnitPrice` - product price per unit
+-   `CustomerID` - a 5-digit integral number uniquely assigned to each customer
+-   `Country` - the name of the country where each customer resides
+
+For more details about the dataset, refer to the [UCI Machine Learning Repository](https://archive.ics.uci.edu/ml/datasets/Online+Retail).
+
+## Part 1: Data Exploration with R (60% of total marks)
+
+### Task
+
+Based on the dataset, determine:
+
+1.  What are the most popular products and how do their sales vary over time?
+2.  Can we segment customers based on their purchasing behavior?
+3.  Are there specific countries that contribute more to sales or have unique buying patterns?
+4.  (Bonus) How do cancellations impact overall sales trends?
+
+**Reflection**: Beyond the questions above, take a moment to examine the dataset critically.
+
+-   Are there any other interesting patterns or anomalies you notice?
+    -   What additional questions or analyses come to mind that could be valuable for the retailer?
+    -   How might external factors, not present in the dataset, influence the trends you've observed?
+
+Document your process, findings, and reflections in the current *R Notebook* - just use the space below this assignment instructions. Be compact in your descriptive and reflective answers!
+
+### Submission Requirements
+
+-   The RMD file containing all answers and relevant code.
+-   An HTML version of the notebook, knitted from the RMD.
+
+**Note**: Ensure your report is: - Structured for easy navigation. - Includes clear visualizations with apt labels and annotations. - Provides short, compact answers to the exploratory questions, also documenting key steps. - Contains efficient and easily executable R code, preferably using `%>%` pipes for streamlined data manipulation.
+
+## Part 2: Tableau Dashboard (40% of total marks)
+
+### Task
+
+Using insights from your R analysis, design a user-friendly, interactive dashboard in Tableau Desktop. Focus on showcasing significant findings related to sales trends and customer behaviors. Your target audience is the CEO of the online retail store - a non-tech-savvy individual keen on understanding broad trends, customer insights, and avenues for growth.
+
+1.  **Storyboarding**: Prior to Tableau, sketch a dashboard storyboard, snapshot or photograph it for the submission.
+2.  **Dashboard Creation in Tableau**: Transform your R insights into a user-centric Tableau dashboard. Highlight crucial trends and customer behaviors.
+
+### Guidelines
+
+-   Prioritize clarity and ease of navigation.
+-   Utilize filters and design elements for an intuitive user experience.
+-   Add descriptions and headers to guide users through your dashboard.
+
+### Submission Requirement
+
+-   Submit the image of your storybaord sketch;
+-   Submit the Tableau Packaged Workbook (TWBX) file, including all worksheets and the final dashboard.
+
+**Caution**: Always export as a *Tableau Packaged Workbook (TWBX)*. Exporting as a *Tableau Workbook (TWB)* might omit important data operations, making your dashboard potentially unreadable.
+
+------------------------------------------------------------------------
+
+# Commence Your Assignment Here
+
+## Data Import & Preliminaries
+
+We start by setting up our working directory where the data file is stored. We then read the file in the data variable and check for its structure and the first 10 rows present in it.
+
+```{r}
+#Setting the working directory where the data file is present 
+setwd("C:/Coursework/MN50749 - Databases and Business Intelligence/Assignment")
+
+#Reading the csv file into a variable called data 
+data <- read.csv("Online Retail.csv")
+
+#Checking the structure of the data
+str(data)
+
+#Checking the first 10 rows of the data
+head(data, 10)
+```
+
+## Data Diagnostic
+
+We check the sum of the null values per column to find the total number of null values per attribute.
+
+```{r}
+#Checking the overall summary of the data
+summary(data)
+
+#Checking if there is any null values in the dataset
+is.na(data)
+
+
+colSums(is.na(data))
+```
+
+We can observe from the results of the above command that our data has a huge number of null values for the CustomerID attribute. Approximately 25% of the CustomerID values are null (135080 CustomerIDs are null).
+
+We check the rows which has null CustomerIDs to check if there is any relevant data.
+
+```{r}
+library(dplyr)
+rows_containing_null <- data %>%
+  filter(is.na(CustomerID) | is.null(CustomerID))
+```
+
+We now check how many orders were cancelled to see if there is correlation between missing CustomerIDs and the cancelled orders.
+
+```{r}
+rows_containing_cancelled_orders <- rows_containing_null %>%
+  filter(substr(InvoiceNo, 1, 1) == "C")
+```
+
+The above commands finds the cancelled orders from the data frame which contains all the rows with nulls values of CustomerID. We found 383 orders that were cancelled and had no CustomerID out the 135080 values. It is not a significantly high number based on which we could tell that there is no relationship between missing values of CustomerID and the cancelled orders.
+
+Although there is a possibility that some of the customers did not register/make a customerID before making a purchase and hence the data for such orders is having null CustomerID, but these orders are absolutely valid orders so we should not remove them for sales related analysis.
+
+#new_data \<- data %\>% \# filter(!is.na(CustomerID) & CustomerID != "")
+
+## In-depth Exploratory Data Analysis
+
+### Question 1. What are the most popular products and how do their sales vary over time?
+
+In order to find the most popular product we can check total quantities sold per product and the number of distinct customers that have purchased that product. Based on the product of these two values we can create a popularity metric. The higher this metric the better we can say is the popularity of that product. We will explore this below.
+
+The stockCode attribute is given to have only values which are 5 digit intergal numbers but we could obsevere that out data has some inconsistency with it. Hence we are removing the values which are other than 5 digit integral numbers.
+
+```{r}
+clean_data <- data %>%
+  filter(grepl("^\\d{5}$", StockCode))
+```
+
+The above clean_data also consists of orders which were later cancelled but for our exploration we will remove the cancelled orders. One reason for removing the cancelled orders is that the cancelled order still shows that people were interested in buying the product (which can show the popularity of the product) but due to some reason cancelled the product later.
+
+```{r}
+data_without_cancelled_orders <- clean_data %>%
+  filter(!grepl("^C", InvoiceNo))
+
+# Calculate total quantities sold per product
+total_quantity_per_product <- data_without_cancelled_orders %>%
+  group_by(StockCode, Description) %>%
+  summarise(TotalQuantitySold = sum(Quantity), TotalSales = sum(Quantity * UnitPrice))
+
+# Calculate the number of distinct customers buying each product
+distinct_customers_per_product <- data_without_cancelled_orders %>%
+  group_by(StockCode) %>%
+  summarise(NumDistinctCustomers = n_distinct(CustomerID))
+```
+
+We have created two separate dataframes, one to store the total quantities sold per product and one to store the distinct number of customers who have purchased that product.
+
+```{r}
+# Merging the two datasets to get a combined view
+popular_products <- merge(total_quantity_per_product, distinct_customers_per_product, by = "StockCode")
+
+#Creating popularity metric
+popular_products$popularity_metric <- popular_products$TotalQuantitySold * popular_products$NumDistinctCustomers
+
+# Sorting by total quantities sold and number of distinct customers
+popular_products <- popular_products[order(popular_products$popularity_metric, decreasing = TRUE),]
+```
+
+We then select the fist 5 rows from this to find the TOP 5 most popular product based on the total popularity metric per product.
+
+```{r}
+top5 <- head(popular_products,5)
+
+
+#fetching all the non-cancelled orders data for the top 10 most quantities sold per product.
+all_data_for_top_10_most_popular<- data_without_cancelled_orders %>%
+  filter(StockCode %in% top5$StockCode)
+
+#formatting the invoice date for above data before we could plot the graph for it.
+library(lubridate)
+all_data_for_top_10_most_popular$InvoiceDate <- dmy_hm(all_data_for_top_10_most_popular$InvoiceDate)
+
+#calculating the monthly sold values based on the stock code to plot a graph
+monthly_sold_quantities<- all_data_for_top_10_most_popular %>%
+  group_by(StockCode, YearMonth = format(InvoiceDate, "%Y-%m")) %>%
+  summarise(MonthlySoldQuantities = sum(Quantity))
+```
+
+Let us now visualise the sales trend of these most popular products. We will draw a line graph to see how each product has done in terms of sales over the year.
+
+```{r}
+library(tidyverse)
+ggplot(monthly_sold_quantities, aes(x = as.factor(YearMonth), y = MonthlySoldQuantities, color = as.factor(StockCode))) +
+  geom_line(aes(group = StockCode)) +
+  labs(title = "Monthly sold quantities over 2011-2012 for top 5 products",
+       x = "Date",
+       y = "Total sales",
+       color = "Products") +
+  theme_minimal() +
+  theme(legend.position = "top", axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+
+```
+
+From the above analysis, we can observe that StockCode 23084 i.e. Rabbit Night Light sees a sudden pike in its quantities sold and the amount of different people who bought it and hence achieves a TOP 5 popularity rating. This particular product could be a seasonal product based on the trend seen from above analysis. The other 4 products have shown consistent sales throughout the year without much sudden spike or drop in sales. So we are safe to assume that these products are fairly popular with the retailer.
+
+### Question 2. Can we segment customers based on their purchasing behavior?
+
+We can segment the customers based on their purchasing behavior using the RFM Analysis (Recency, Frequency, Monetary). In this the given dataset only has transactional data from Dec 2010 to Dec 2011 so the Recency metric would not be an appropriate metric to judge and use for segmentation as it checks for how recently the customer has made a purchase.
+
+Frequency metric: counts the total number of purchases made by each customer during the observed time period i.e. Dec 2010 to Dec 2011.
+
+Monetary metric: counts the total amount spent by each customer during the observed time period i.e. Dec 2010 to Dec 2011
+
+```{r}
+#Removing the null customersIDs for the analysis of buying patterns per customer
+data_without_cancelled_orders_without_null_CustID <-    data_without_cancelled_orders %>% 
+ filter(!is.na(CustomerID) & CustomerID != "")
+
+# Counting the distinct InvoiceIDs for each CustomerID
+invoice_count <- aggregate(InvoiceNo ~ CustomerID, data = data_without_cancelled_orders_without_null_CustID, FUN = function(x) length(unique(x)))
+
+# Renaming the columns for better understanding
+colnames(invoice_count) <- c("CustomerID", "DistinctInvoiceCount")
+
+head(invoice_count)
+summary(invoice_count)
+```
+
+We can segment the customers based on the quantile ranges of customers but from the above summary we can observe that the data is skewed and the majority of the customers have made less than 5 purchases which will impact the quantile ranges of the data.
+
+Because of the above reason we are creating customised thresholds based on our judgment to determine the segments for each customer.
+
+```{r}
+distinct_counts <- table(invoice_count$DistinctInvoiceCount)
+distinct_counts
+```
+
+From the above code we can see what are the different counts of orders per customer. For example, 1503 customers have placed an order only once, 829 customers placed an order twice and so on.
+
+We will create 3 segments of customers based on the number of time they have made a purchase. If the customer has made between 1-3 purchases in the entire year then they will be categorised as "Low Frequency Buyer". If the customer has made between 4-9 purchases in the entire year then they will be categorised as "Moderate Frequency Buyer" and if the customer has made 10+ purchased in the entire year then they will be categorised as "High Frequency Buyer".
+
+```{r}
+# Defining thresholds for segmentation
+low_frequency_threshold <- 3
+moderate_frequency_threshold <- 9
+
+# Assigning segments based on DistinctInvoiceCount
+invoice_count$Frequency_Segment <- cut(
+  invoice_count$DistinctInvoiceCount,
+  breaks = c(0, low_frequency_threshold, moderate_frequency_threshold, Inf),
+  labels = c("Low Frequncy Buyers", "Moderate Frequency Buyers", "High Frequency Buyers"),
+  include.lowest = TRUE
+)
+
+summary(invoice_count$Frequency_Segment)
+```
+
+The above R code categorises all the customers into 3 customised segments based on the frequency of their orders (purchasing pattern) and gives the total count of customers in segments.
+
+We have 2830 Low frequency buyers, 1103 moderate frequency buyers and 382 high frequency buyers. This type of numbers were expected as many people in general might not be shopping online multiple times in a year.
+
+We will now introduce another segment based on the total amount spent by each customer during the observed time period.
+
+```{r}
+total_amount_spent_each_customer <- data_without_cancelled_orders_without_null_CustID %>%
+  mutate(TotalAmount = Quantity * UnitPrice) %>%
+  group_by(CustomerID) %>%
+  summarise(TotalAmountSpent = sum(TotalAmount, na.rm = TRUE))
+
+head(total_amount_spent_each_customer)
+summary(total_amount_spent_each_customer)
+
+#creating quantiles for categories based on money spent
+quantiles <- quantile(total_amount_spent_each_customer$TotalAmountSpent, probs = c(0, 0.45, 0.75, 1))
+
+# Assigning labels based on specified categories
+total_amount_spent_each_customer$SpendingSegment <- cut(
+  total_amount_spent_each_customer$TotalAmountSpent,
+  breaks = quantiles,
+  labels = c("Low-Spenders", "Moderate-Spenders", "High-Spenders"),
+  include.lowest = TRUE
+)
+
+head(total_amount_spent_each_customer)
+summary(total_amount_spent_each_customer)
+```
+
+The above R code will categorise customers in 3 different categories based on the total amount of money they have spent in given time period. We will also see how many customers are present in each category.
+
+We get 1942 customer categorised as Low-spenders, 1294 customers as moderate-spenders and 1079 customers as High-spenders.
+
+Based on the above two categorisation we are creating a new tier list for customers. The tier list will have 3 different tiers viz. Silver, Gold, and Platinum. The logic to categorise the customers in these tiers is given below.
+
+```{r}
+customer_tier_categorisation <- full_join(invoice_count, total_amount_spent_each_customer, by = "CustomerID") %>%
+  mutate(Customer_Tier = case_when(
+    (Frequency_Segment %in% c("High Frequncy Buyers", "Moderate Frequncy Buyers", "Low Frequncy Buyers") &
+     SpendingSegment %in% c("High-Spenders")) ~ "Platinum Customer",
+    (Frequency_Segment %in% c("Low Frequncy Buyers", "High Frequncy Buyers", "Moderate Frequncy Buyers") &
+     SpendingSegment %in% c("Low-Spenders")) ~ "Silver Customer",
+    TRUE ~ "Gold Customer"
+  ))
+
+head(customer_tier_categorisation)
+summary(customer_tier_categorisation)
+#Checking how many customers were categorised in what tier
+length(which(customer_tier_categorisation$Customer_Tier == "Platinum Customer"))
+
+#Creating a new csv file to store customer categorisation data.
+#write.csv(customer_tier_categorisation, "C:\\Coursework\\MN50749 - Databases and Business Intelligence\\Assignment\\Customer_Tier_Segmentation.csv", row.names = FALSE)
+```
+
+### Question 3. Are there specific countries that contribute more to sales or have unique buying patterns?
+
+In order to find out if any specific countries are contributing more to the sales, we will find the total sales per country and then arrange them in descending order to find the countries that contribute the most and the least towards sales.
+
+```{r}
+total_sales_per_country <- data %>%
+  mutate(TotalSales = Quantity * UnitPrice) %>%
+  group_by(Country) %>%
+  summarise(TotalSales = sum(TotalSales)) %>%
+  arrange(desc(TotalSales))
+
+head(total_sales_per_country)
+tail(total_sales_per_country)
+```
+
+From above head command we receive the list of 37 countries based on the total sales per country grouped in a descending order of their sales.
+
+We have United Kingdom, Netherlands, EIRE (Ireland), Germany and France respectively in TOP 5 countries contributing towards the sales.
+
+We can also observe with the help of tail the BOTTOM 5 countries contributing towards the sales. These countries include Saudi Arabia, Bahrain, Czech Republic, RSA (Republic of South Africa) and Brazil respectively.
+
+To see if there is any unique buying pattern based on country, we will categorise the quantities sold per product per country. This will give us some idea about the buying patterns for each country.
+
+```{r}
+quantities_per_product_per_country <- data %>%
+  group_by(Country, StockCode, Description) %>%
+  summarise(TotalQuantity = sum(Quantity)) %>%
+  arrange(Country, desc(TotalQuantity)) %>%
+  group_by(Country) %>%
+  top_n(5, TotalQuantity)
+
+#quantities_per_product_per_country <- data %>%
+  #filter(StockCode %in% quantities_per_product_per_country$StockCode)
+
+#We will now check the buying patterns for the TOP 5 country contributing to the sales
+most_bought_items_for_top5_countries <- quantities_per_product_per_country %>%
+  filter(Country %in% c("United Kingdom", "Netharlands", "EIRE", "Germany", "France")) %>%
+  group_by(StockCode, Description) %>%
+  summarise(TotalQuantity = sum(TotalQuantity)) %>%
+  arrange(desc(TotalQuantity))
+```
+
+From the above R code we can observe the most bought product across the top 5 sales producing countries is, World War 2 Gliders design, which was also present in the top 5 most popular product as expected. There are a few more decoration items amongst the most bought items. Also there are few food and kitchen related items present in the above list.
+
+```{r}
+filtered_data <- data %>%
+  filter(Country %in% c("United Kingdom", "Netherlands", "EIRE", "Germany", "France"))
+
+filtered_data$InvoiceDate <- dmy_hm(filtered_data$InvoiceDate)
+#formatting the invoice date for above data before we could plot the graph for it.
+monthly_sold_quantities_per_country<- filtered_data %>%
+  group_by(Country, YearMonth = format(InvoiceDate, "%Y-%m")) %>%
+  summarise(MonthlySoldQuantities = sum(Quantity))
+
+#We will now see the trend of buying for these products in the selected TOP 5 countries.
+
+ggplot(monthly_sold_quantities_per_country, aes(x = as.factor(YearMonth), y = (MonthlySoldQuantities/10), color = as.factor(Country))) +
+  geom_line(aes(group = Country)) +
+  labs(title = "Monthly sold quantities over Dec 201- Dec 2011 for top 5 Countries in Sales",
+       x = "Date",
+       y = "Total sales",
+       color = "Countries") +
+  theme_minimal() +
+    theme(legend.position = "top", axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+
+
+```
+
+The above graph shows us the trend of buying in the TOP 5 countries. Since the bulk of the buying is done in United Kingom, we are getting a very separated graph between the United Kingdom and the other 4 countries out of the TOP 5.
+
+### Question 4 (Bonus). How do cancellations impact overall sales trends?
+
+#We will check the total revenue for the year with and without the cancellations to see how they would impact the sales trend. We will also check if the cancellations have any impact on specific products and their sales/popularity.
+
+```{r}
+#without the cancelled orders
+data_without_cancelled_orders$InvoiceDate <- dmy_hm(data_without_cancelled_orders$InvoiceDate)
+
+potential_sales_by_month<- data_without_cancelled_orders %>%
+  group_by(YearMonth = format(InvoiceDate, "%Y-%m")) %>%
+  summarise(TotalSales = sum(Quantity * UnitPrice))
+
+data$InvoiceDate <- dmy_hm(data$InvoiceDate)
+
+sales_by_month<- data %>%
+  group_by(YearMonth = format(InvoiceDate, "%Y-%m")) %>%
+  summarise(TotalSales = sum(Quantity * UnitPrice))
+
+
+potential_sales_plot <- ggplot(potential_sales_by_month, aes(x = as.factor(YearMonth), y = TotalSales)) +
+  geom_point() +
+  labs(title = "Potential Total Sales",
+       x = "Date",
+       y = "Actual Total Sales") +
+  theme_minimal()+
+  theme(legend.position = "top", axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+
+actual_sales_plot <- ggplot(sales_by_month, aes(x = as.factor(YearMonth), y = TotalSales)) +
+  geom_point() +
+  labs(title = "Actual Total Sales",
+       x = "Date",
+       y = "Potential Total Sales") +
+  theme_minimal()+
+  theme(legend.position = "top", axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+
+library(patchwork)
+actual_sales_plot + potential_sales_plot + plot_layout(ncol = 2)
+
+combined_sales <- merge(sales_by_month, potential_sales_by_month, by = "YearMonth", all = TRUE)
+summary(combined_sales)
+
+Potential_revenue_lost <- sum(combined_sales$TotalSales.y) - sum(combined_sales$TotalSales.x)
+
+percentage_of_actual_revenue_lost <- (Potential_revenue_lost/sum(combined_sales$TotalSales.x))*100
+
+#Finding the most cancelled products 
+cancelled_products <- data %>%
+  filter(grepl("^\\d{5}$", StockCode)) %>%
+  filter(substr(InvoiceNo, 1, 1) == "C") %>% 
+  group_by(StockCode) %>% 
+  summarise(TotalCancelled = sum(Quantity)) %>%
+  arrange(desc(TotalCancelled))
+
+tail(cancelled_products)
+
+```
+
+From the above analysis, we could observe that the cancellations are dragging the revenue down by almost 4%. Also there are some transactions like the PAPER BIRDIE and the KITCHEN JAR SET where some customer has bought 80000+ and 75000+ units respectively and have later cancelled the order as seen from the top cancelled products. This might be because the customer placed a wrong order (entered incorrect quantity) and after placing realised that there is issue with order and hence cancelled. From the data as well we are seeing a similar pattern where a bulk order has been created and then cancelled immediately within next 10-15 mins.
+
+Because of this there could be skewness also when finding the most popular item as such orders would increase their number of sold items category in case if we are working only with number of sold units metric.
+
+## Summary & Key Takeaways
+
+In summary, we conducted a deep exploration of data to find trends and patterns which otherwise would have not been found. We introduced robust popularity metric based on the total quantities sold and the number distinct customers per product to gauge the popularity and find the most attrative products from customer's point of view.
+
+We also conducted the RFM analysis but without the recency metric as the counting recency metric for the given dataset would not yield any valuable insights. We then tried to categorise the customers based on their frequency of buying the products and the total amount they have spent across their single/multiple purchases. We used the metric of these 2 factors to create a Tier set categorisation for the customers.
+
+We identified the TOP 5 and BOTTOM 5 sales yeilding countries and explored the specific buying patterns for the top contributing countries by finding similar products among them.
+
+In the end we took into account the revenue based on the actual sales vs. the potential sales (if the cancellation of orders would not have happened) and tried to visualise the potential loss of revenues. We also tried to identify the most cancellations, noting extremely high canceled quantities for specific items and their impact on sales/popularity.
+
+Key Takeaways: 1. The dataset contains a significant number of null values for CustomerID, impacting customer-specific analyses and requiring careful consideration in further exploration.
+
+2.  Analysis revealed both consistent and sudden sales trends for various products, highlighting the need for understanding seasonal or trend-based demands.
+
+3.  Segmenting customers based on purchasing behavior allows for tiered categorization, aiding in targeted marketing or loyalty programs.
+
+4.  Cancellations affect revenue and can skew revenue and popularity metrics, especially for items with high canceled quantities.
+
+5.  Apart from null CustomersIDs, there are more inconsistencies in data revolving mainly around the StockCode and Description. There are also few records (only 2) where we observed negative values for the unit costs. Hence it is necessary to clean the data further if we wish gain more insights out of it.
